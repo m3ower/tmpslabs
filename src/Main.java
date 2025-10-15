@@ -6,9 +6,11 @@ public class Main {
 
         System.out.println("Welcome to SOLID Coffee Shop!");
 
+        // Get customer name
         System.out.print("Enter customer name: ");
         String customerName = scanner.nextLine();
 
+        // Choose coffee
         System.out.println("\nSelect your coffee:");
         System.out.println("1. Espresso - $3.00");
         System.out.println("2. Cappuccino - $4.50");
@@ -39,28 +41,9 @@ public class Main {
 
         Order order = new Order(customerName, coffeeType, basePrice);
 
-        System.out.println("\nSelect discount type:");
-        System.out.println("1. No Discount");
-        System.out.println("2. Student Discount (15% off)");
-        System.out.println("3. Loyalty Member (20% off)");
-        System.out.println("4. Senior Discount (10% off)");
-        System.out.print("Choice: ");
+        DiscountFactory.displayDiscountMenu();
         int discountChoice = scanner.nextInt();
-
-        DiscountStrategy discount;
-        switch (discountChoice) {
-            case 2:
-                discount = new StudentDiscount();
-                break;
-            case 3:
-                discount = new LoyaltyDiscount();
-                break;
-            case 4:
-                discount = new SeniorDiscount();
-                break;
-            default:
-                discount = new NoDiscount();
-        }
+        Discount discount = DiscountFactory.createDiscount(discountChoice);
 
         OrderProcessor processor = new OrderProcessor(discount);
         processor.processOrder(order);
