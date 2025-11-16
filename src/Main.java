@@ -17,6 +17,11 @@ public class Main {
         CATALOG.put(5, new Product("SKU-5", "Noise-canceling Headset", 129.00));
     }
 
+    // STRUCTURAL PATTERNS: Initialize subsystems
+    private static final LegacyInventorySystem legacyInventory = new LegacyInventorySystem();
+    private static final InventoryAdapter inventoryAdapter = new InventoryAdapter(legacyInventory);
+    private static final CheckoutFacade checkoutFacade = new CheckoutFacade(inventoryAdapter);
+
     // State (kept simple & explicit)
     private static final List<OrderItem> CART = new ArrayList<>();
     private static String customerName = "";
@@ -26,8 +31,17 @@ public class Main {
     private static String paymentChoice = "paypal"; // card | paypal
     private static String carrierChoice = "dhl";    // dhl | fedex
 
+    // NEW: Order enhancements (Decorator Pattern)
+    private static boolean addGiftWrap = false;
+    private static boolean addInsurance = false;
+    private static boolean addExpress = false;
+    private static boolean addPrioritySupport = false;
+
     public static void main(String[] args) {
-        LOG.info("Welcome! (Singleton, Builder, Factory Method, Abstract Factory demo)\n");
+        LOG.info("Welcome to E-Commerce System!");
+        LOG.info("Demonstrating: Singleton, Builder, Factory Method, Abstract Factory,");
+        LOG.info("               Decorator, Adapter, Facade patterns\n");
+
         boolean running = true;
         while (running) {
             printMainMenu();
@@ -41,8 +55,10 @@ public class Main {
                 case "7": setNotes(); break;
                 case "8": choosePayment(); break;
                 case "9": chooseCarrier(); break;
-                case "10": reviewDraft(); break;
-                case "11": checkout(); break;
+                case "10": manageEnhancements(); break;  // NEW: Decorator Pattern
+                case "11": checkInventory(); break;      // NEW: Adapter Pattern
+                case "12": reviewDraft(); break;
+                case "13": checkout(); break;            // UPDATED: Uses Facade
                 case "0": running = false; break;
                 default: System.out.println("Invalid option. Try again.");
             }
@@ -53,13 +69,27 @@ public class Main {
     // ---------- MENUS ----------
 
     private static void printMainMenu() {
-        System.out.println("\n==================== MAIN MENU ====================");
+        System.out.println("\n" + "=".repeat(70));
+        System.out.println("                      E-COMMERCE SYSTEM MENU");
+        System.out.println("=".repeat(70));
+
         System.out.println("Cart: " + (CART.isEmpty() ? "(empty)" : CART.size() + " item(s)") +
                 " | Customer: " + mark(customerName) +
-                " | Address: " + mark(shippingAddress) +
-                " | Pay: " + paymentChoice.toUpperCase() +
-                " | Ship: " + carrierChoice.toUpperCase());
-        System.out.println("---------------------------------------------------");
+                " | Address: " + mark(shippingAddress));
+        System.out.println("Payment: " + paymentChoice.toUpperCase() +
+                " | Shipping: " + carrierChoice.toUpperCase());
+
+        // Show active enhancements (Decorator)
+        List<String> enhancements = new ArrayList<>();
+        if (addGiftWrap) enhancements.add("Gift");
+        if (addInsurance) enhancements.add("Insurance");
+        if (addExpress) enhancements.add("Express");
+        if (addPrioritySupport) enhancements.add("Support");
+        if (!enhancements.isEmpty()) {
+            System.out.println("Enhancements: " + String.join(", ", enhancements));
+        }
+
+        System.out.println("-".repeat(70));
         System.out.println(" 1) View product catalog");
         System.out.println(" 2) Add item to cart");
         System.out.println(" 3) View/modify cart");
@@ -69,15 +99,20 @@ public class Main {
         System.out.println(" 7) Set notes");
         System.out.println(" 8) Choose payment method");
         System.out.println(" 9) Choose carrier");
-        System.out.println("10) Review draft order");
-        System.out.println("11) CHECKOUT");
+        System.out.println("10) Manage order enhancements (DECORATOR)");
+        System.out.println("11) Check inventory status (ADAPTER)");
+        System.out.println("12) Review draft order");
+        System.out.println("13) CHECKOUT (FACADE)");
         System.out.println(" 0) Exit");
-        System.out.println("===================================================");
+        System.out.println("=".repeat(70));
     }
 
     private static void showCatalog() {
         System.out.println("\n-- Product Catalog --");
-        CATALOG.forEach((id, p) -> System.out.println(" " + id + ") " + p));
+        CATALOG.forEach((id, p) -> {
+            int stock = inventoryAdapter.getAvailableQuantity(p.sku);
+            System.out.println(" " + id + ") " + p + " [Stock: " + stock + "]");
+        });
     }
 
     private static void addItemFlow() {
@@ -85,8 +120,19 @@ public class Main {
         int id = promptInt("Enter product number: ");
         Product p = CATALOG.get(id);
         if (p == null) { System.out.println("No such product."); return; }
+
+        // Check stock availability (Adapter Pattern)
+        int available = inventoryAdapter.getAvailableQuantity(p.sku);
+        System.out.println("Available stock: " + available);
+
         int qty = promptInt("Quantity: ");
         if (qty <= 0) { System.out.println("Quantity must be > 0."); return; }
+
+        if (qty > available) {
+            System.out.println("Insufficient stock! Only " + available + " available.");
+            return;
+        }
+
         CART.add(new OrderItem(p, qty));
         LOG.info("Added: " + p.name + " x" + qty);
     }
@@ -148,21 +194,94 @@ public class Main {
         LOG.info("Carrier: " + carrierChoice.toUpperCase());
     }
 
+    // ---------- NEW: DECORATOR PATTERN - Order Enhancements ----------
+
+    private static void manageEnhancements() {
+        while (true) {
+            System.out.println("\n=== ORDER ENHANCEMENTS (Decorator Pattern) ===");
+            System.out.println("Add optional features to your order:");
+            System.out.println(" 1) " + (addGiftWrap ? "✅" : "☐") + " Gift Wrapping (+$5.99)");
+            System.out.println(" 2) " + (addInsurance ? "✅" : "☐") + " Shipping Insurance (+2% of order)");
+            System.out.println(" 3) " + (addExpress ? "✅" : "☐") + " Express Processing (+$9.99)");
+            System.out.println(" 4) " + (addPrioritySupport ? "✅" : "☐") + " Priority Support (+$3.99)");
+            System.out.println(" 5) Clear all enhancements");
+            System.out.println(" 0) Back");
+
+            String c = prompt("Toggle enhancement: ").trim();
+            switch (c) {
+                case "1": addGiftWrap = !addGiftWrap; break;
+                case "2": addInsurance = !addInsurance; break;
+                case "3": addExpress = !addExpress; break;
+                case "4": addPrioritySupport = !addPrioritySupport; break;
+                case "5":
+                    addGiftWrap = false;
+                    addInsurance = false;
+                    addExpress = false;
+                    addPrioritySupport = false;
+                    LOG.info("All enhancements cleared");
+                    break;
+                case "0": return;
+                default: System.out.println("Invalid option.");
+            }
+        }
+    }
+
+    // ---------- NEW: ADAPTER PATTERN - Inventory Check ----------
+
+    private static void checkInventory() {
+        System.out.println("\n=== INVENTORY CHECK (via Adapter Pattern) ===");
+        LOG.info("Checking inventory through adapted legacy system...");
+
+        inventoryAdapter.showInventoryReport();
+
+        if (!CART.isEmpty()) {
+            System.out.println("Checking availability for current cart:");
+            boolean allAvailable = checkoutFacade.checkInventoryAvailability(CART);
+            if (allAvailable) {
+                System.out.println("All cart items are in stock!");
+            } else {
+                System.out.println("Some items have insufficient stock!");
+            }
+        }
+
+        prompt("\nPress Enter to continue...");
+    }
+
     // ---------- REVIEW + CHECKOUT ----------
 
     private static void reviewDraft() {
-        System.out.println("\n=== DRAFT ORDER REVIEW ===");
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("              DRAFT ORDER REVIEW");
+        System.out.println("=".repeat(60));
+
         printCart();
         double subtotal = cartSubtotal();
         System.out.println("Subtotal: $" + fmt(subtotal));
         System.out.println("Discount: $" + fmt(discount));
-        System.out.println("Total:    $" + fmt(Math.max(0.0, subtotal - discount)));
+        System.out.println("Base Total: $" + fmt(Math.max(0.0, subtotal - discount)));
+
+        if (hasAnyEnhancements()) {
+            System.out.println("\n--- Order Enhancements ---");
+            if (addGiftWrap) System.out.println(" Gift Wrapping: +$5.99");
+            if (addInsurance) {
+                double fee = subtotal * 0.02;
+                System.out.println(" Shipping Insurance (2%): +$" + fmt(fee));
+            }
+            if (addExpress) System.out.println("  ⚡ Express Processing: +$9.99");
+            if (addPrioritySupport) System.out.println("Priority Support: +$3.99");
+
+            double enhancedTotal = calculateEnhancedTotal(subtotal - discount);
+            System.out.println("\nFINAL TOTAL (with enhancements): $" + fmt(enhancedTotal));
+        }
+
+        System.out.println("\n--- Order Details ---");
         System.out.println("Customer: " + mark(customerName));
         System.out.println("Address:  " + mark(shippingAddress));
         System.out.println("Payment:  " + paymentChoice.toUpperCase());
         System.out.println("Carrier:  " + carrierChoice.toUpperCase());
         System.out.println("Notes:    " + (notes == null ? "" : notes));
-        System.out.println("===========================================");
+        System.out.println("=".repeat(60));
+
         missingHints();
     }
 
@@ -172,7 +291,6 @@ public class Main {
         if (blank(customerName)) { System.out.println("Set customer name first."); return; }
         if (blank(shippingAddress)) { System.out.println("Set shipping address first."); return; }
 
-        // Build a fresh Order via Builder so we never double-add items
         Order.Builder b = new Order.Builder()
                 .orderId(genOrderId())
                 .customer(customerName)
@@ -192,39 +310,69 @@ public class Main {
             return;
         }
 
-        // Show final summary
-        System.out.println("\n=== ORDER SUMMARY ===");
-        System.out.println(order);
+        OrderComponent enhancedOrder = new BasicOrderComponent(order);
 
-        // Pay via Factory Method
-        PaymentProcessorCreator creator = "card".equalsIgnoreCase(paymentChoice)
+        if (addGiftWrap) {
+            enhancedOrder = new GiftWrapDecorator(enhancedOrder);
+            LOG.info("Applied: Gift Wrapping");
+        }
+        if (addInsurance) {
+            enhancedOrder = new InsuranceDecorator(enhancedOrder);
+            LOG.info("Applied: Shipping Insurance");
+        }
+        if (addExpress) {
+            enhancedOrder = new ExpressProcessingDecorator(enhancedOrder);
+            LOG.info("Applied: Express Processing");
+        }
+        if (addPrioritySupport) {
+            enhancedOrder = new PrioritySupportDecorator(enhancedOrder);
+            LOG.info("Applied: Priority Support");
+        }
+
+        System.out.println("\n" + "=".repeat(60));
+        System.out.println("              FINAL ORDER SUMMARY");
+        System.out.println("=".repeat(60));
+        System.out.println(order);
+        System.out.println("Enhancement Details: " + enhancedOrder.getDescription());
+        System.out.println("FINAL TOTAL: $" + String.format("%.2f", enhancedOrder.calculateTotal()));
+        System.out.println("=".repeat(60));
+
+        String confirm = prompt("\nProceed with checkout? (yes/no): ").trim().toLowerCase();
+        if (!confirm.equals("yes") && !confirm.equals("y")) {
+            System.out.println("Checkout cancelled.");
+            return;
+        }
+
+        PaymentProcessorCreator paymentCreator = "card".equalsIgnoreCase(paymentChoice)
                 ? new CreditCardProcessorCreator()
                 : new PaypalProcessorCreator();
 
-        boolean paid = creator.pay(order);
-        if (!paid) { LOG.warn("Payment failed."); return; }
-        LOG.info("Payment successful.");
-
-        // Shipping via Abstract Factory
         ShippingFactory shipFactory = "fedex".equalsIgnoreCase(carrierChoice)
                 ? new FedExFactory()
                 : new DHLFactory();
 
-        ShippingLabel label = shipFactory.createLabel(order.shippingAddress);
-        PackageBox box = shipFactory.createBox();
+        LOG.info("\nUsing FACADE PATTERN to process checkout...\n");
+        CheckoutResult result = checkoutFacade.processCheckout(
+                order,
+                enhancedOrder,
+                paymentCreator,
+                shipFactory
+        );
 
-        System.out.println("=== SHIPPING PREP ===");
-        System.out.println("Label: " + label.render());
-        System.out.println("Box:   " + box.spec());
+        result.printSummary();
 
-        LOG.info("Order complete.");
-        resetState();
+        if (result.isSuccess()) {
+            System.out.println("\n📦 Updated inventory:");
+            inventoryAdapter.showInventoryReport();
+
+            resetState();
+        }
     }
 
     // ---------- CART OPS ----------
 
     private static void printCart() {
-        System.out.println("\n-- Cart --");
+        System.out.println("\n-- Shopping Cart --");
         if (CART.isEmpty()) {
             System.out.println("(empty)");
             return;
@@ -268,6 +416,10 @@ public class Main {
         notes = "";
         paymentChoice = "paypal";
         carrierChoice = "dhl";
+        addGiftWrap = false;
+        addInsurance = false;
+        addExpress = false;
+        addPrioritySupport = false;
         LOG.info("State reset for a new order.");
     }
 
@@ -277,7 +429,7 @@ public class Main {
         if (blank(customerName)) misses.add("set customer");
         if (blank(shippingAddress)) misses.add("set address");
         if (!misses.isEmpty()) {
-            System.out.println("Next steps: " + String.join(", ", misses) + ".");
+            System.out.println("\n⚠️  Next steps: " + String.join(", ", misses) + ".");
         }
     }
 
@@ -297,6 +449,19 @@ public class Main {
 
     private static String fmt(double v) {
         return String.format("%.2f", v);
+    }
+
+    private static boolean hasAnyEnhancements() {
+        return addGiftWrap || addInsurance || addExpress || addPrioritySupport;
+    }
+
+    private static double calculateEnhancedTotal(double baseTotal) {
+        double total = baseTotal;
+        if (addGiftWrap) total += 5.99;
+        if (addInsurance) total += baseTotal * 0.02;
+        if (addExpress) total += 9.99;
+        if (addPrioritySupport) total += 3.99;
+        return total;
     }
 
     private static String prompt(String msg) {
