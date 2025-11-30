@@ -37,10 +37,15 @@ public class Main {
     private static boolean addExpress = false;
     private static boolean addPrioritySupport = false;
 
+    // BEHAVIORAL PATTERN: Strategy
+    private static final DiscountStrategyManager strategyManager = new DiscountStrategyManager();
+    private static DiscountCalculator discountCalculator = new DiscountCalculator(new NoDiscountStrategy());
+
     public static void main(String[] args) {
         LOG.info("Welcome to E-Commerce System!");
         LOG.info("Demonstrating: Singleton, Builder, Factory Method, Abstract Factory,");
-        LOG.info("               Decorator, Adapter, Facade patterns\n");
+        LOG.info("               Decorator, Adapter, Facade patterns");
+        LOG.info("BEHAVIORAL:    Chain of Responsibility, Observer, Strategy\n");
 
         boolean running = true;
         while (running) {
@@ -55,10 +60,11 @@ public class Main {
                 case "7": setNotes(); break;
                 case "8": choosePayment(); break;
                 case "9": chooseCarrier(); break;
-                case "10": manageEnhancements(); break;  // NEW: Decorator Pattern
-                case "11": checkInventory(); break;      // NEW: Adapter Pattern
-                case "12": reviewDraft(); break;
-                case "13": checkout(); break;            // UPDATED: Uses Facade
+                case "10": manageEnhancements(); break;
+                case "11": checkInventory(); break;
+                case "12": manageDiscountStrategy(); break;  // NEW: Strategy Pattern
+                case "13": reviewDraft(); break;
+                case "14": checkout(); break;
                 case "0": running = false; break;
                 default: System.out.println("Invalid option. Try again.");
             }
@@ -89,20 +95,24 @@ public class Main {
             System.out.println("Enhancements: " + String.join(", ", enhancements));
         }
 
+        // Show discount strategy (Strategy Pattern)
+        System.out.println("Discount Strategy: " + discountCalculator.getStrategyInfo());
+
         System.out.println("-".repeat(70));
         System.out.println(" 1) View product catalog");
         System.out.println(" 2) Add item to cart");
         System.out.println(" 3) View/modify cart");
         System.out.println(" 4) Set customer name");
         System.out.println(" 5) Set shipping address");
-        System.out.println(" 6) Set discount");
+        System.out.println(" 6) Set manual discount");
         System.out.println(" 7) Set notes");
         System.out.println(" 8) Choose payment method");
         System.out.println(" 9) Choose carrier");
         System.out.println("10) Manage order enhancements (DECORATOR)");
         System.out.println("11) Check inventory status (ADAPTER)");
-        System.out.println("12) Review draft order");
-        System.out.println("13) CHECKOUT (FACADE)");
+        System.out.println("12) Manage discount strategy (STRATEGY)");
+        System.out.println("13) Review draft order");
+        System.out.println("14) CHECKOUT (FACADE + CHAIN + OBSERVER)");
         System.out.println(" 0) Exit");
         System.out.println("=".repeat(70));
     }
@@ -169,10 +179,10 @@ public class Main {
     }
 
     private static void setDiscount() {
-        double d = promptDouble("Discount amount (>= 0): ");
+        double d = promptDouble("Manual discount amount (>= 0): ");
         if (d < 0) { System.out.println("Discount cannot be negative."); return; }
         discount = d;
-        LOG.info("Discount set to $" + String.format("%.2f", discount));
+        LOG.info("Manual discount set to $" + String.format("%.2f", discount));
     }
 
     private static void setNotes() {
@@ -194,7 +204,7 @@ public class Main {
         LOG.info("Carrier: " + carrierChoice.toUpperCase());
     }
 
-    // ---------- NEW: DECORATOR PATTERN - Order Enhancements ----------
+    // ---------- DECORATOR PATTERN - Order Enhancements ----------
 
     private static void manageEnhancements() {
         while (true) {
@@ -226,7 +236,7 @@ public class Main {
         }
     }
 
-    // ---------- NEW: ADAPTER PATTERN - Inventory Check ----------
+    // ---------- ADAPTER PATTERN - Inventory Check ----------
 
     private static void checkInventory() {
         System.out.println("\n=== INVENTORY CHECK (via Adapter Pattern) ===");
@@ -238,13 +248,99 @@ public class Main {
             System.out.println("Checking availability for current cart:");
             boolean allAvailable = checkoutFacade.checkInventoryAvailability(CART);
             if (allAvailable) {
-                System.out.println("All cart items are in stock!");
+                System.out.println("✓ All cart items are in stock!");
             } else {
-                System.out.println("Some items have insufficient stock!");
+                System.out.println("⚠️  Some items have insufficient stock!");
             }
         }
 
         prompt("\nPress Enter to continue...");
+    }
+
+    // ---------- BEHAVIORAL PATTERN: STRATEGY - Discount Management ----------
+
+    private static void manageDiscountStrategy() {
+        while (true) {
+            System.out.println("\n=== DISCOUNT STRATEGY (Strategy Pattern) ===");
+            System.out.println("Current Strategy: " + discountCalculator.getStrategyInfo());
+            System.out.println("\nOptions:");
+            System.out.println(" 1) View all available strategies");
+            System.out.println(" 2) Change strategy");
+            System.out.println(" 3) Preview discount calculation");
+            System.out.println(" 0) Back");
+
+            String choice = prompt("Choose: ").trim();
+            switch (choice) {
+                case "1":
+                    strategyManager.listStrategies();
+                    break;
+                case "2":
+                    changeDiscountStrategy();
+                    break;
+                case "3":
+                    previewDiscount();
+                    break;
+                case "0":
+                    return;
+                default:
+                    System.out.println("Invalid option.");
+            }
+        }
+    }
+
+    private static void changeDiscountStrategy() {
+        strategyManager.listStrategies();
+        System.out.println("\nEnter strategy key (or 'cancel' to go back):");
+        String key = prompt("> ").trim();
+
+        if (key.equalsIgnoreCase("cancel")) {
+            return;
+        }
+
+        DiscountStrategy strategy = strategyManager.getStrategy(key);
+        if (strategy != null) {
+            discountCalculator.setStrategy(strategy);
+            System.out.println("✓ Strategy changed to: " + strategy.getStrategyName());
+        } else {
+            System.out.println("Invalid strategy key.");
+        }
+    }
+
+    private static void previewDiscount() {
+        if (CART.isEmpty()) {
+            System.out.println("Cart is empty. Add items first.");
+            return;
+        }
+
+        // Create a temporary order for preview
+        try {
+            Order.Builder builder = new Order.Builder()
+                    .orderId("PREVIEW")
+                    .customer(blank(customerName) ? "Preview Customer" : customerName)
+                    .shipTo(blank(shippingAddress) ? "Preview Address" : shippingAddress);
+
+            for (OrderItem item : CART) {
+                builder.addItem(item.product, item.quantity);
+            }
+
+            Order previewOrder = builder.build();
+            double subtotal = previewOrder.subtotal();
+            double strategyDiscount = discountCalculator.calculateDiscount(previewOrder);
+            double manualDiscount = discount;
+            double totalDiscount = strategyDiscount + manualDiscount;
+            double finalTotal = Math.max(0, subtotal - totalDiscount);
+
+            System.out.println("\n=== DISCOUNT PREVIEW ===");
+            System.out.println("Subtotal:           $" + fmt(subtotal));
+            System.out.println("Strategy Discount:  -$" + fmt(strategyDiscount));
+            System.out.println("Manual Discount:    -$" + fmt(manualDiscount));
+            System.out.println("Total Discount:     -$" + fmt(totalDiscount));
+            System.out.println("Final Total:        $" + fmt(finalTotal));
+            System.out.println("========================\n");
+
+        } catch (Exception e) {
+            System.out.println("Cannot preview: " + e.getMessage());
+        }
     }
 
     // ---------- REVIEW + CHECKOUT ----------
@@ -257,18 +353,40 @@ public class Main {
         printCart();
         double subtotal = cartSubtotal();
         System.out.println("Subtotal: $" + fmt(subtotal));
-        System.out.println("Discount: $" + fmt(discount));
+
+        // Show strategy-based discount
+        if (!CART.isEmpty()) {
+            try {
+                Order.Builder builder = new Order.Builder()
+                        .orderId("PREVIEW")
+                        .customer(blank(customerName) ? "Preview" : customerName)
+                        .shipTo(blank(shippingAddress) ? "Preview" : shippingAddress);
+                for (OrderItem item : CART) {
+                    builder.addItem(item.product, item.quantity);
+                }
+                Order previewOrder = builder.build();
+                double strategyDiscount = discountCalculator.calculateDiscount(previewOrder);
+                if (strategyDiscount > 0) {
+                    System.out.println("Strategy Discount (" +
+                            discountCalculator.getStrategyInfo() + "): -$" + fmt(strategyDiscount));
+                }
+            } catch (Exception e) {
+                // Ignore preview errors
+            }
+        }
+
+        System.out.println("Manual Discount: -$" + fmt(discount));
         System.out.println("Base Total: $" + fmt(Math.max(0.0, subtotal - discount)));
 
         if (hasAnyEnhancements()) {
             System.out.println("\n--- Order Enhancements ---");
-            if (addGiftWrap) System.out.println(" Gift Wrapping: +$5.99");
+            if (addGiftWrap) System.out.println(" 🎁 Gift Wrapping: +$5.99");
             if (addInsurance) {
                 double fee = subtotal * 0.02;
-                System.out.println(" Shipping Insurance (2%): +$" + fmt(fee));
+                System.out.println(" 🛡️  Shipping Insurance (2%): +$" + fmt(fee));
             }
-            if (addExpress) System.out.println("  ⚡ Express Processing: +$9.99");
-            if (addPrioritySupport) System.out.println("Priority Support: +$3.99");
+            if (addExpress) System.out.println(" ⚡ Express Processing: +$9.99");
+            if (addPrioritySupport) System.out.println(" 🎧 Priority Support: +$3.99");
 
             double enhancedTotal = calculateEnhancedTotal(subtotal - discount);
             System.out.println("\nFINAL TOTAL (with enhancements): $" + fmt(enhancedTotal));
@@ -291,17 +409,34 @@ public class Main {
         if (blank(customerName)) { System.out.println("Set customer name first."); return; }
         if (blank(shippingAddress)) { System.out.println("Set shipping address first."); return; }
 
+        // Calculate strategy-based discount
         Order.Builder b = new Order.Builder()
                 .orderId(genOrderId())
                 .customer(customerName)
                 .shipTo(shippingAddress)
-                .discount(discount)
                 .notes(notes == null ? "" : notes);
 
         for (OrderItem it : CART) {
             b.addItem(it.product, it.quantity);
         }
 
+        Order tempOrder;
+        try {
+            tempOrder = b.build();
+        } catch (Exception ex) {
+            System.out.println("Could not build order: " + ex.getMessage());
+            return;
+        }
+
+        // BEHAVIORAL PATTERN: Strategy - Calculate discount
+        double strategyDiscount = discountCalculator.calculateDiscount(tempOrder);
+        double totalDiscount = strategyDiscount + discount;
+
+        LOG.info("🎯 Applying discount: Strategy ($" + fmt(strategyDiscount) +
+                ") + Manual ($" + fmt(discount) + ") = $" + fmt(totalDiscount));
+
+        // Rebuild order with combined discount
+        b.discount(totalDiscount);
         Order order;
         try {
             order = b.build();
@@ -310,6 +445,7 @@ public class Main {
             return;
         }
 
+        // Apply decorators
         OrderComponent enhancedOrder = new BasicOrderComponent(order);
 
         if (addGiftWrap) {
@@ -333,6 +469,7 @@ public class Main {
         System.out.println("              FINAL ORDER SUMMARY");
         System.out.println("=".repeat(60));
         System.out.println(order);
+        System.out.println("Discount Strategy: " + discountCalculator.getStrategyInfo());
         System.out.println("Enhancement Details: " + enhancedOrder.getDescription());
         System.out.println("FINAL TOTAL: $" + String.format("%.2f", enhancedOrder.calculateTotal()));
         System.out.println("=".repeat(60));
@@ -351,7 +488,9 @@ public class Main {
                 ? new FedExFactory()
                 : new DHLFactory();
 
-        LOG.info("\nUsing FACADE PATTERN to process checkout...\n");
+        LOG.info("\nUsing FACADE + CHAIN OF RESPONSIBILITY + OBSERVER patterns...\n");
+
+        // BEHAVIORAL PATTERNS: Facade integrates Chain of Responsibility and Observer
         CheckoutResult result = checkoutFacade.processCheckout(
                 order,
                 enhancedOrder,
@@ -420,6 +559,7 @@ public class Main {
         addInsurance = false;
         addExpress = false;
         addPrioritySupport = false;
+        discountCalculator.setStrategy(new NoDiscountStrategy());
         LOG.info("State reset for a new order.");
     }
 

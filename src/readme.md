@@ -1,849 +1,430 @@
-# Gurev Andreea - Laboratory Work 2 Report
+# Gurev Andreea: Laboratory Work #3 Report
 
-
-
----
-
-## Table of Contents
-1. [Introduction](#introduction)
-2. [Theory and Motivation](#theory-and-motivation)
-3. [Implementation & Explanation](#implementation--explanation)
-4. [Pattern Integration](#pattern-integration)
-5. [Results and Screenshots](#results-and-screenshots)
-6. [Conclusions](#conclusions)
 
 ---
 
 ## Introduction
 
-### Project Overview
-This laboratory work extends the E-Commerce Order Management System from Laboratory Work 1 by implementing three structural design patterns. The system now supports:
-- **Dynamic order enhancements** (gift wrapping, insurance, express processing)
-- **Legacy system integration** (inventory management)
-- **Simplified checkout workflow** (coordinating multiple subsystems)
+This laboratory work demonstrates the implementation of **three behavioral design patterns** in an e-commerce system. The patterns were integrated into the existing project from Labs 0-2, which already implements creational and structural patterns.
 
-### Patterns from Previous Lab (Creational)
-- ✅ **Singleton**: Logger for centralized logging
-- ✅ **Builder**: Order.Builder for complex object construction
-- ✅ **Factory Method**: PaymentProcessorCreator for payment processors
-- ✅ **Abstract Factory**: ShippingFactory for shipping materials
-
-### New Patterns (Structural)
-- **Decorator**: Dynamic order enhancements
-- **Adapter**: Legacy inventory system integration
-- **Facade**: Simplified checkout process
+### Behavioral Patterns Implemented:
+1. **Chain of Responsibility** - For multi-step order validation
+2. **Observer** - For order status notifications
+3. **Strategy** - For flexible discount calculation
 
 ---
 
-## Theory and Motivation
+## Implemented Patterns
 
-### What are Structural Design Patterns?
+### 1. Chain of Responsibility Pattern
 
-Structural design patterns deal with object composition and class structures. They help ensure that when one part of a system changes, the entire structure doesn't need to change. These patterns focus on how classes and objects can be composed to form larger structures.
+**Purpose**: Creates a chain of validation handlers where each handler processes the order validation request or passes it to the next handler in the chain.
 
-### The Three Implemented Patterns
+**Location**: `OrderValidationChain.java`
 
-#### 1. Decorator Pattern 🎨
-
-**Intent**: Attach additional responsibilities to an object dynamically. Decorators provide a flexible alternative to subclassing for extending functionality.
-
-**Problem**: In our e-commerce system, customers can add various optional services to their orders:
-- Gift wrapping
-- Shipping insurance
-- Express processing
-- Priority support
-
-Creating a subclass for every possible combination would lead to **class explosion**:
-```
-Order
-├── OrderWithGiftWrap
-├── OrderWithInsurance
-├── OrderWithGiftWrapAndInsurance
-├── OrderWithGiftWrapAndExpress
-├── OrderWithInsuranceAndExpress
-└── OrderWithGiftWrapAndInsuranceAndExpress
-... (2^4 = 16 classes for 4 features!)
-```
-
-**Solution**: Use decorators that can be wrapped around orders dynamically.
+**Key Components**:
+- **Abstract Handler**: `OrderValidationHandler`
+- **Concrete Handlers**:
+    - `BasicOrderValidationHandler` - Validates basic order information
+    - `InventoryValidationHandler` - Checks stock availability
+    - `OrderValueValidationHandler` - Validates order total against min/max limits
+    - `ProductAvailabilityHandler` - Checks product availability and quantity limits
+- **Context**: `OrderValidationContext` - Passes data through the chain
+- **Result**: `ValidationResult` - Contains validation outcome and warnings
 
 **Benefits**:
-- Flexible: Add/remove features at runtime
-- Open/Closed Principle: Add new features without modifying existing code
-- Single Responsibility: Each decorator handles one feature
-- Transparent: Client code doesn't need to know about decorators
+- Decouples order validation logic into separate, reusable handlers
+- Easy to add new validation steps without modifying existing code
+- Flexible chain configuration (standard or quick validation)
+- Provides detailed validation results with warnings
+
+**Example Usage**:
+```java
+// Build validation chain
+OrderValidationHandler chain = OrderValidationChainBuilder.buildStandardChain(inventoryManager);
+
+// Validate order
+OrderValidationContext context = new OrderValidationContext(inventoryManager);
+ValidationResult result = chain.validate(order, context);
+
+if (!result.isValid()) {
+    System.out.println("Validation failed: " + result.getMessage());
+}
+```
+
+**Integration**:
+The chain is used in `CheckoutFacade.processCheckout()` to validate orders before processing:
+```java
+ValidationResult validationResult = validationChain.validate(order, context);
+if (!validationResult.isValid()) {
+    result.setFailure("Validation failed: " + validationResult.getMessage());
+    return result;
+}
+```
 
 ---
 
-#### 2. Adapter Pattern 🔌
+### 2. Observer Pattern
 
-**Intent**: Convert the interface of a class into another interface clients expect. Adapter lets classes work together that couldn't otherwise because of incompatible interfaces.
+**Purpose**: Defines a one-to-many dependency between objects so that when the order status changes, all dependent systems are notified automatically.
 
-**Problem**: Our modern e-commerce system needs to integrate with a legacy inventory management system that:
-- Uses different method names (`queryStockLevel` vs `getAvailableQuantity`)
-- Uses different parameter types
-- Cannot be modified (third-party or legacy code)
+**Location**: `OrderObserver.java`
 
-**Solution**: Create an adapter that translates between the modern interface and the legacy system.
+**Key Components**:
+- **Subject Interface**: `OrderSubject` - Defines attach/detach/notify operations
+- **Observer Interface**: `OrderObserver` - Defines update method
+- **Concrete Subject**: `ObservableOrderTracker` - Manages observers and order statuses
+- **Concrete Observers**:
+    - `EmailNotificationObserver` - Sends email notifications
+    - `SMSNotificationObserver` - Sends SMS notifications
+    - `AnalyticsObserver` - Records order statistics
+    - `InventoryUpdateObserver` - Handles inventory-related actions
+    - `AuditLogObserver` - Maintains audit trail
+- **Event Object**: `OrderEvent` - Contains status change information
+- **Status Enum**: `OrderStatus` - Defines possible order states
 
 **Benefits**:
-- Reuse existing code without modification
-- Single Responsibility: Adapter only handles interface conversion
-- Integration without tight coupling
-- Easy to swap implementations
+- Loose coupling between order processing and notification systems
+- Easy to add new observers without modifying existing code
+- All interested parties are automatically notified of status changes
+- Supports metadata passing with events
+
+**Example Usage**:
+```java
+// Create observable tracker
+ObservableOrderTracker tracker = new ObservableOrderTracker();
+
+// Attach observers
+tracker.attach(new EmailNotificationObserver());
+tracker.attach(new SMSNotificationObserver());
+tracker.attach(new AnalyticsObserver());
+
+// Update status - all observers are notified
+tracker.updateOrderStatus("ORD-123", OrderStatus.PAYMENT_CONFIRMED);
+```
+
+**Order Statuses**:
+- CREATED
+- VALIDATED
+- PAYMENT_PENDING
+- PAYMENT_CONFIRMED
+- PROCESSING
+- READY_TO_SHIP
+- SHIPPED
+- DELIVERED
+- CANCELLED
+- FAILED
+
+**Integration**:
+The observer pattern is integrated into `CheckoutFacade` and notifies observers at each checkout step:
+```java
+// Notify validation complete
+orderTracker.updateOrderStatus(order.orderId, OrderStatus.VALIDATED);
+
+// Notify payment confirmed with metadata
+Map<String, Object> metadata = new HashMap<>();
+metadata.put("totalAmount", finalAmount);
+orderTracker.updateOrderStatus(order.orderId, OrderStatus.PAYMENT_CONFIRMED, metadata);
+```
 
 ---
 
-#### 3. Facade Pattern 🏛️
+### 3. Strategy Pattern
 
-**Intent**: Provide a unified interface to a set of interfaces in a subsystem. Facade defines a higher-level interface that makes the subsystem easier to use.
+**Purpose**: Defines a family of discount calculation algorithms, encapsulates each one, and makes them interchangeable. The strategy lets the discount algorithm vary independently from the order processing logic.
 
-**Problem**: The checkout process involves coordinating multiple complex subsystems:
-```java
-// WITHOUT FACADE - Client must handle:
-1. Validate inventory
-2. Reserve stock
-3. Process payment
-4. Handle payment rollback on failure
-5. Create shipping labels
-6. Create package boxes
-7. Initialize order tracking
-8. Update tracking status
-9. Send order confirmation email
-10. Send payment receipt email
-11. Send shipping notification email
-12. Release inventory on errors
-13. Handle all exceptions
-... ~50+ lines of complex coordination code!
-```
+**Location**: `DiscountStrategy.java`
 
-**Solution**: Create a facade that provides a simple `processCheckout()` method that handles all complexity internally.
+**Key Components**:
+- **Strategy Interface**: `DiscountStrategy` - Defines discount calculation method
+- **Concrete Strategies**:
+    - `NoDiscountStrategy` - No discount applied
+    - `PercentageDiscountStrategy` - Percentage-based discount
+    - `FixedAmountDiscountStrategy` - Fixed dollar amount discount
+    - `BulkOrderDiscountStrategy` - Discount for large quantity orders
+    - `SeasonalDiscountStrategy` - Month-specific discounts
+    - `TieredDiscountStrategy` - Spend-based tiered discounts
+    - `FirstTimeCustomerStrategy` - Discount for new customers
+- **Context**: `DiscountCalculator` - Uses the strategy
+- **Manager**: `DiscountStrategyManager` - Manages available strategies
+
+**Available Strategies**:
+1. **None** - Standard pricing
+2. **Percentage** - 10%, 15%, or 20% off
+3. **Fixed Amount** - $5 or $10 off
+4. **Bulk Order** - 15% off for 10+ items
+5. **Seasonal** - 20% off during specific months
+6. **Tiered** - Progressive discounts ($50+→5%, $100+→10%, $200+→15%, $500+→20%)
+7. **First-Time Customer** - 15% off for new customers
 
 **Benefits**:
-- Simplified interface for complex subsystems
-- Reduced dependencies between client and subsystems
-- Easier to maintain and test
-- Centralized coordination logic
+- Flexible discount calculation without modifying order processing code
+- Easy to add new discount strategies
+- Strategies can be changed at runtime
+- Clear separation of concerns
 
----
-
-## Implementation & Explanation
-
-
-#### Key Implementation
-
-**Component Interface**:
+**Example Usage**:
 ```java
-interface OrderComponent {
-    double calculateTotal();
-    String getDescription();
-    Order getBaseOrder();
-}
-```
-
-**Concrete Component**:
-```java
-class BasicOrderComponent implements OrderComponent {
-    private final Order order;
-    
-    public BasicOrderComponent(Order order) {
-        this.order = order;
-    }
-    
-    @Override
-    public double calculateTotal() {
-        return order.total();
-    }
-    
-    @Override
-    public String getDescription() {
-        return "Standard Order";
-    }
-    
-    @Override
-    public Order getBaseOrder() {
-        return order;
-    }
-}
-```
-
-**Abstract Decorator**:
-```java
-abstract class OrderEnhancementDecorator implements OrderComponent {
-    protected OrderComponent wrappedOrder;
-    
-    public OrderEnhancementDecorator(OrderComponent order) {
-        this.wrappedOrder = order;
-    }
-    
-    // Default implementations delegate to wrapped object
-    @Override
-    public double calculateTotal() {
-        return wrappedOrder.calculateTotal();
-    }
-    
-    @Override
-    public String getDescription() {
-        return wrappedOrder.getDescription();
-    }
-}
-```
-
-**Concrete Decorator Example - Gift Wrapping**:
-```java
-class GiftWrapDecorator extends OrderEnhancementDecorator {
-    private static final double GIFT_WRAP_FEE = 5.99;
-    
-    public GiftWrapDecorator(OrderComponent order) {
-        super(order);
-    }
-    
-    @Override
-    public double calculateTotal() {
-        // Add gift wrap fee to wrapped order's total
-        return wrappedOrder.calculateTotal() + GIFT_WRAP_FEE;
-    }
-    
-    @Override
-    public String getDescription() {
-        // Append gift wrap to description
-        return wrappedOrder.getDescription() + 
-               " + Gift Wrapping ($" + String.format("%.2f", GIFT_WRAP_FEE) + ")";
-    }
-}
-```
-
-#### Usage in Main Application
-
-```java
-// Build base order
-Order order = new Order.Builder()
-        .orderId("ORD-001")
-        .customer("John Doe")
-        .shipTo("123 Main St")
-        .addItem(product, 2)
-        .build();
-
-// Wrap with decorators dynamically based on user choices
-OrderComponent enhancedOrder = new BasicOrderComponent(order);
-
-if (addGiftWrap) {
-    enhancedOrder = new GiftWrapDecorator(enhancedOrder);
-}
-if (addInsurance) {
-    enhancedOrder = new InsuranceDecorator(enhancedOrder);
-}
-if (addExpress) {
-    enhancedOrder = new ExpressProcessingDecorator(enhancedOrder);
-}
-
-// Final total includes all enhancements
-double finalTotal = enhancedOrder.calculateTotal();
-String description = enhancedOrder.getDescription();
-// Description: "Standard Order + Gift Wrapping ($5.99) + Shipping Insurance ($4.80)"
-```
-
-#### Why This Works
-
-1. **Composition over Inheritance**: Each decorator wraps another OrderComponent
-2. **Transparency**: Client treats decorated and undecorated objects the same way
-3. **Flexibility**: Can add/remove decorators at runtime
-4. **Extensibility**: New decorators can be added without changing existing code
-
----
-
-### Pattern 2: Adapter Pattern (Inventory Integration)
-
-**Location**: `src/InventoryIntegration.java`
-
-#### Architecture
-
-```
-InventoryManager (target interface)
-         ↑
-         │ implements
-         │
-InventoryAdapter ────uses───> LegacyInventorySystem (adaptee)
-```
-
-#### Key Implementation
-
-**Target Interface** (what our system expects):
-```java
-interface InventoryManager {
-    boolean checkStock(String sku, int quantity);
-    void reserveStock(String sku, int quantity);
-    void releaseStock(String sku, int quantity);
-    int getAvailableQuantity(String sku);
-}
-```
-
-**Adaptee** (legacy system with incompatible interface):
-```java
-class LegacyInventorySystem {
-    private final Map<String, Integer> stockLevels = new HashMap<>();
-    
-    // Legacy method names
-    public int queryStockLevel(String productCode) {
-        return stockLevels.getOrDefault(productCode, 0);
-    }
-    
-    public boolean decrementStock(String productCode, int amount) {
-        int current = queryStockLevel(productCode);
-        if (current >= amount) {
-            stockLevels.put(productCode, current - amount);
-            return true;
-        }
-        return false;
-    }
-    
-    public void incrementStock(String productCode, int amount) {
-        int current = queryStockLevel(productCode);
-        stockLevels.put(productCode, current + amount);
-    }
-}
-```
-
-**Adapter** (converts interfaces):
-```java
-class InventoryAdapter implements InventoryManager {
-    private final LegacyInventorySystem legacySystem;
-    
-    public InventoryAdapter(LegacyInventorySystem legacySystem) {
-        this.legacySystem = legacySystem;
-        Logger.getInstance().info("Inventory Adapter initialized");
-    }
-    
-    @Override
-    public boolean checkStock(String sku, int quantity) {
-        // Adapt modern method to legacy method
-        int available = legacySystem.queryStockLevel(sku);
-        return available >= quantity;
-    }
-    
-    @Override
-    public void reserveStock(String sku, int quantity) {
-        // Adapt reserve operation to decrement
-        if (!legacySystem.decrementStock(sku, quantity)) {
-            throw new IllegalStateException("Insufficient stock");
-        }
-    }
-    
-    @Override
-    public void releaseStock(String sku, int quantity) {
-        // Adapt release operation to increment
-        legacySystem.incrementStock(sku, quantity);
-    }
-    
-    @Override
-    public int getAvailableQuantity(String sku) {
-        // Direct delegation with name translation
-        return legacySystem.queryStockLevel(sku);
-    }
-}
-```
-
-#### Usage in Main Application
-
-```java
-// Initialize legacy system (cannot modify this code)
-LegacyInventorySystem legacyInventory = new LegacyInventorySystem();
-
-// Create adapter
-InventoryAdapter inventoryAdapter = new InventoryAdapter(legacyInventory);
-
-// Now can use modern interface with legacy system
-if (inventoryAdapter.checkStock("SKU-1", 5)) {
-    inventoryAdapter.reserveStock("SKU-1", 5);
-    System.out.println("Stock reserved");
-}
-
-// Get stock levels through adapter
-int available = inventoryAdapter.getAvailableQuantity("SKU-2");
-System.out.println("Available: " + available);
-```
-
-#### Why This Works
-
-1. **Interface Translation**: Adapter converts method calls between interfaces
-2. **No Legacy Modification**: Legacy system remains unchanged
-3. **Transparent Integration**: Rest of system uses modern interface
-4. **Easy to Replace**: Can swap legacy system without affecting clients
-
----
-
-### Pattern 3: Facade Pattern (Checkout Workflow)
-
-**Location**: `src/CheckoutFacade.java`
-
-#### Architecture
-
-```
-Client
-  │
-  └──> CheckoutFacade.processCheckout()
-            │
-            ├──> InventoryManager (stock validation)
-            ├──> PaymentProcessor (payment processing)
-            ├──> ShippingFactory (label & box creation)
-            ├──> OrderTrackingSystem (tracking)
-            └──> NotificationService (emails)
-```
-
-#### Subsystems
-
-**Notification Service**:
-```java
-class NotificationService {
-    public void sendOrderConfirmation(Order order) {
-        // Send confirmation email
-    }
-    
-    public void sendShippingNotification(Order order, ShippingLabel label) {
-        // Send shipping notification
-    }
-    
-    public void sendPaymentReceipt(Order order, double amount) {
-        // Send payment receipt
-    }
-}
-```
-
-**Order Tracking System**:
-```java
-class OrderTrackingSystem {
-    private final Map<String, String> orderStatuses = new HashMap<>();
-    
-    public void createTracking(String orderId) {
-        orderStatuses.put(orderId, "CREATED");
-    }
-    
-    public void updateStatus(String orderId, String status) {
-        orderStatuses.put(orderId, status);
-    }
-}
-```
-
-#### Facade Implementation
-
-```java
-class CheckoutFacade {
-    // Subsystems
-    private final InventoryManager inventoryManager;
-    private final NotificationService notificationService;
-    private final OrderTrackingSystem trackingSystem;
-    
-    public CheckoutFacade(InventoryManager inventoryManager) {
-        this.inventoryManager = inventoryManager;
-        this.notificationService = new NotificationService();
-        this.trackingSystem = new OrderTrackingSystem();
-    }
-    
-    /**
-     * MAIN FACADE METHOD
-     * Replaces ~50+ lines of complex coordination code
-     */
-    public CheckoutResult processCheckout(
-            Order order,
-            OrderComponent enhancedOrder,
-            PaymentProcessorCreator paymentCreator,
-            ShippingFactory shippingFactory) {
-        
-        CheckoutResult result = new CheckoutResult(order.orderId);
-        
-        try {
-            // Step 1: Validate inventory
-            if (!validateInventory(order)) {
-                result.setFailure("Insufficient inventory");
-                return result;
-            }
-            
-            // Step 2: Reserve stock
-            reserveInventory(order);
-            
-            // Step 3: Process payment
-            double finalAmount = enhancedOrder.calculateTotal();
-            if (!processPayment(paymentCreator, order, finalAmount)) {
-                releaseInventory(order); // Rollback
-                result.setFailure("Payment failed");
-                return result;
-            }
-            
-            // Step 4: Create shipping materials
-            ShippingLabel label = shippingFactory.createLabel(order.shippingAddress);
-            PackageBox box = shippingFactory.createBox();
-            result.setShippingDetails(label, box);
-            
-            // Step 5: Create tracking
-            trackingSystem.createTracking(order.orderId);
-            trackingSystem.updateStatus(order.orderId, "PAYMENT_CONFIRMED");
-            
-            // Step 6: Send notifications
-            notificationService.sendOrderConfirmation(order);
-            notificationService.sendPaymentReceipt(order, finalAmount);
-            notificationService.sendShippingNotification(order, label);
-            
-            // Step 7: Finalize
-            trackingSystem.updateStatus(order.orderId, "READY_TO_SHIP");
-            result.setSuccess(enhancedOrder.getDescription());
-            
-        } catch (Exception e) {
-            // Handle errors and attempt rollback
-            releaseInventory(order);
-            result.setFailure(e.getMessage());
-        }
-        
-        return result;
-    }
-    
-    // Private helper methods hide complexity
-    private boolean validateInventory(Order order) { /* ... */ }
-    private void reserveInventory(Order order) { /* ... */ }
-    private void releaseInventory(Order order) { /* ... */ }
-    private boolean processPayment(...) { /* ... */ }
-}
-```
-
-#### Usage in Main Application
-
-**WITHOUT Facade** (what client would need to do):
-```java
-// Client has to handle everything manually (~50+ lines)
-StockValidator validator = new StockValidator(inventory);
-if (!validator.validateOrder(order)) {
-    System.out.println("Insufficient stock");
-    return;
-}
-
-validator.reserveOrderStock(order);
-
-PaymentProcessor payment = paymentCreator.createProcessor();
-if (!payment.process(order)) {
-    // Rollback inventory
-    for (OrderItem item : order.items) {
-        inventory.releaseStock(item.product.sku, item.quantity);
-    }
-    return;
-}
-
-ShippingLabel label = shippingFactory.createLabel(order.shippingAddress);
-PackageBox box = shippingFactory.createBox();
-
-OrderTrackingSystem tracking = new OrderTrackingSystem();
-tracking.createTracking(order.orderId);
-tracking.updateStatus(order.orderId, "PAYMENT_CONFIRMED");
-
-NotificationService notifications = new NotificationService();
-notifications.sendOrderConfirmation(order);
-notifications.sendPaymentReceipt(order, order.total());
-notifications.sendShippingNotification(order, label);
-
-tracking.updateStatus(order.orderId, "READY_TO_SHIP");
-// ... error handling, rollback logic, etc.
-```
-
-**WITH Facade** (simple single call):
-```java
-// Client uses simple facade interface (1 line!)
-CheckoutResult result = checkoutFacade.processCheckout(
-    order,
-    enhancedOrder,
-    paymentCreator,
-    shippingFactory
+// Create discount calculator with a strategy
+DiscountCalculator calculator = new DiscountCalculator(
+    new PercentageDiscountStrategy(15)
 );
 
-// Check result
-if (result.isSuccess()) {
-    result.printSummary();
-} else {
-    System.out.println("Checkout failed: " + result.getMessage());
-}
+// Calculate discount for an order
+double discount = calculator.calculateDiscount(order);
+
+// Change strategy at runtime
+calculator.setStrategy(new TieredDiscountStrategy());
+double newDiscount = calculator.calculateDiscount(order);
 ```
 
-#### Why This Works
+**Integration**:
+In `Main.java`, users can select discount strategies through the menu:
+```java
+// Menu option to manage discount strategy
+private static void manageDiscountStrategy() {
+    strategyManager.listStrategies();
+    // User selects a strategy
+    discountCalculator.setStrategy(selectedStrategy);
+}
 
-1. **Simplified Interface**: One method instead of many subsystem calls
-2. **Error Handling**: Facade handles all errors and rollbacks internally
-3. **Coordination**: Facade knows the correct order of operations
-4. **Maintainability**: Changes to workflow only affect facade
-5. **Testability**: Can test facade as a unit
+// Applied during checkout
+double strategyDiscount = discountCalculator.calculateDiscount(order);
+```
 
 ---
 
-## Pattern Integration
+## Code Structure
 
-### How Patterns Work Together
-
-The beauty of design patterns is how they complement each other. In our system:
+### File Organization
 
 ```
-User Action: Place Order
-      │
-      ├─> BUILDER (Lab 1): Construct Order object
-      │     └─> Order.Builder.build()
-      │
-      ├─> DECORATOR (Lab 2): Add enhancements
-      │     ├─> BasicOrderComponent(order)
-      │     ├─> GiftWrapDecorator(...)
-      │     ├─> InsuranceDecorator(...)
-      │     └─> ExpressProcessingDecorator(...)
-      │
-      ├─> FACTORY METHOD (Lab 1): Create payment processor
-      │     └─> PaymentProcessorCreator.createProcessor()
-      │
-      ├─> ABSTRACT FACTORY (Lab 1): Create shipping materials
-      │     ├─> ShippingFactory.createLabel()
-      │     └─> ShippingFactory.createBox()
-      │
-      ├─> ADAPTER (Lab 2): Check/reserve inventory
-      │     └─> InventoryAdapter → LegacyInventorySystem
-      │
-      └─> FACADE (Lab 2): Coordinate everything
-            └─> CheckoutFacade.processCheckout()
-                  ├─> Uses ADAPTER for inventory
-                  ├─> Uses FACTORY METHOD for payment
-                  ├─> Uses ABSTRACT FACTORY for shipping
-                  └─> Coordinates all subsystems
+project/
+├── Main.java                    # Updated main application with all patterns
+├── CheckoutFacade.java          # Updated facade with Chain & Observer
+├── OrderValidationChain.java    # Chain of Responsibility implementation
+├── OrderObserver.java           # Observer pattern implementation
+├── DiscountStrategy.java        # Strategy pattern implementation
+├── [Previous Lab Files]
+│   ├── Logger.java              # Singleton pattern
+│   ├── Order.java               # Builder pattern
+│   ├── PaymentFactory.java      # Factory Method pattern
+│   ├── ShippingFactory.java     # Abstract Factory pattern
+│   ├── OrderDecorator.java      # Decorator pattern
+│   └── InventoryAdapter.java    # Adapter pattern
+└── README_LAB3.md              # This documentation
 ```
 
-### Pattern Synergy Examples
+### Pattern Integration Diagram
 
-**1. Facade + Adapter**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Main Menu                            │
+│  (User Interface with Strategy Pattern Integration)         │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    CheckoutFacade                            │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  Chain of Responsibility: Order Validation           │  │
+│  │  BasicValidation → Inventory → Value → Product       │  │
+│  └──────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  Observer Pattern: Status Notifications              │  │
+│  │  Email, SMS, Analytics, Inventory, Audit observers   │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│              DiscountCalculator (Strategy Context)           │
+│  Uses selected DiscountStrategy to calculate discounts      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Usage Examples
+
+### Example 1: Chain of Responsibility
+
 ```java
-class CheckoutFacade {
-    private final InventoryManager inventoryManager; // Could be adapter
+// The chain validates orders before checkout
+public CheckoutResult processCheckout(Order order, ...) {
+    // Step 1: Run validation chain
+    OrderValidationContext context = new OrderValidationContext(inventoryManager);
+    ValidationResult result = validationChain.validate(order, context);
     
-    public CheckoutResult processCheckout(...) {
-        // Facade uses adapter internally
-        if (!inventoryManager.checkStock(...)) {
-            return failure;
-        }
-        inventoryManager.reserveStock(...);
+    if (!result.isValid()) {
+        return new CheckoutResult(false, result.getMessage());
     }
+    
+    // Display warnings
+    for (String warning : result.getWarnings()) {
+        logger.warn(warning);
+    }
+    
+    // Continue with checkout...
 }
 ```
 
-**2. Decorator + Builder**:
+**Output Example**:
+```
+🔍 Chain Step 1: Validating basic order information...
+✓ Basic validation passed
+🔍 Chain Step 2: Validating inventory availability...
+⚠️  Low stock alert for Wireless Mouse (only 15 remaining)
+✓ Inventory validation passed
+🔍 Chain Step 3: Validating order value...
+✓ Order value validation passed
+🔍 Chain Step 4: Validating product availability...
+✓ Product availability validation passed
+```
+
+### Example 2: Observer Pattern
+
 ```java
-// Build order
-Order order = new Order.Builder()
-    .orderId("ORD-001")
-    .customer("John")
-    .build();
+// Observers are notified automatically when status changes
+orderTracker.updateOrderStatus("ORD-20251130-143022", OrderStatus.PAYMENT_CONFIRMED);
 
-// Decorate order
-OrderComponent enhanced = new BasicOrderComponent(order);
-enhanced = new GiftWrapDecorator(enhanced);
-enhanced = new ExpressProcessingDecorator(enhanced);
+// All observers receive the notification:
+// - EmailNotificationObserver sends confirmation email
+// - SMSNotificationObserver sends text message
+// - AnalyticsObserver records the event
+// - InventoryUpdateObserver processes inventory changes
+// - AuditLogObserver creates audit entry
 ```
 
-**3. All Patterns Together in Checkout**:
+**Output Example**:
+```
+📢 Notifying 5 observers about: OrderEvent[ORD-20251130-143022: PAYMENT_PENDING → PAYMENT_CONFIRMED at 14:30:22]
+📧 EMAIL: Sending notification for order ORD-20251130-143022
+   ✉️  Email: [Payment Confirmation] Your payment has been confirmed
+📱 SMS: Sending notification for order ORD-20251130-143022
+   📲 SMS: Order ORD-20251130-143022: Payment Confirmed
+📊 ANALYTICS: Recording status change
+   📈 Analytics: Status 'Payment Confirmed' count: 1
+📝 AUDIT: [2025-11-30 14:30:22] Order ORD-20251130-143022: PAYMENT_PENDING → PAYMENT_CONFIRMED
+```
+
+### Example 3: Strategy Pattern
+
 ```java
-// User places order...
+// User selects tiered discount strategy
+discountCalculator.setStrategy(new TieredDiscountStrategy());
 
-// 1. BUILDER: Create order
-Order order = new Order.Builder()
-    .customer(name)
-    .shipTo(address)
-    .addItem(product, qty)
-    .build();
+// Calculate discount based on order value
+Order order = // ... order with $150 subtotal
+double discount = discountCalculator.calculateDiscount(order);
+// Returns $15 (10% tier applies for $100+)
 
-// 2. DECORATOR: Add features
-OrderComponent enhanced = new BasicOrderComponent(order);
-if (giftWrap) enhanced = new GiftWrapDecorator(enhanced);
-if (insurance) enhanced = new InsuranceDecorator(enhanced);
+// User changes to percentage discount
+discountCalculator.setStrategy(new PercentageDiscountStrategy(20));
+discount = discountCalculator.calculateDiscount(order);
+// Returns $30 (20% of $150)
+```
 
-// 3. FACTORY METHOD: Create payment processor
-PaymentProcessorCreator paymentCreator = 
-    new CreditCardProcessorCreator();
+**Output Example**:
+```
+=== AVAILABLE DISCOUNT STRATEGIES ===
+1) none - No Discount
+   Standard pricing - no discounts applied
+2) percent10 - Percentage Discount
+   10% off entire order
+3) tiered - Tiered Discount
+   Tiered discounts: $50+ → 5% off; $100+ → 10% off; $200+ → 15% off; $500+ → 20% off;
+=====================================
 
-// 4. ABSTRACT FACTORY: Create shipping materials
-ShippingFactory shipFactory = new DHLFactory();
+🎯 Discount strategy changed to: Tiered Discount
+💰 Tiered discount (tier: $100.0 -> 10%): $15.00
+```
 
-// 5. FACADE uses ADAPTER internally
-CheckoutResult result = checkoutFacade.processCheckout(
-    order,        // from BUILDER
-    enhanced,     // from DECORATOR
-    paymentCreator, // from FACTORY METHOD
-    shipFactory     // from ABSTRACT FACTORY
-);
-// Facade coordinates:
-// - ADAPTER for inventory
-// - FACTORY METHOD for payment
-// - ABSTRACT FACTORY for shipping
-// - All notifications and tracking
+### Complete Checkout Flow
+
+```
+1. User adds items to cart
+2. User selects discount strategy (Strategy Pattern)
+3. User proceeds to checkout
+4. CheckoutFacade validates order (Chain of Responsibility)
+   - Basic validation
+   - Inventory check
+   - Value validation
+   - Product availability
+5. If validation passes:
+   - Status → VALIDATED (Observer notifies all observers)
+   - Reserve inventory
+   - Process payment
+   - Status → PAYMENT_CONFIRMED (Observer notifies)
+   - Prepare shipping
+   - Status → PROCESSING (Observer notifies)
+   - Status → READY_TO_SHIP (Observer notifies)
+6. Order complete with full audit trail
 ```
 
 ---
 
-## Results
+## Pattern Benefits
 
+### Chain of Responsibility
+- Single Responsibility: Each handler has one validation concern
+- Open/Closed: Easy to add new validators without changing existing code
+- Flexible: Can reorder or skip handlers
+- Detailed feedback: Warnings and error messages
 
-### Sample Execution
+### Observer
+- Loose coupling: Order processing doesn't know about notification systems
+- Dynamic subscriptions: Observers can be added/removed at runtime
+- Broadcast communication: One status change notifies all interested parties
+- Event metadata: Rich context passed with notifications
 
-```
-==================== MAIN MENU ====================
-Cart: (empty) | Customer: (not set) | Address: (not set)
-Payment: PAYPAL | Shipping: DHL
----------------------------------------------------
- 1) View product catalog
- 2) Add item to cart
- 3) View/modify cart
- 4) Set customer name
- 5) Set shipping address
- 6) Set discount
- 7) Set notes
- 8) Choose payment method
- 9) Choose carrier
-10) Manage order enhancements (DECORATOR) 🎨
-11) Check inventory status (ADAPTER) 🔌
-12) Review draft order
-13) CHECKOUT (FACADE) 🏛️
- 0) Exit
-===================================================
-```
+### Strategy
+- Runtime flexibility: Discount algorithm can change during execution
+- Eliminates conditionals: No need for large if/else or switch statements
+- Easy testing: Each strategy can be tested independently
+- Business rules encapsulation: Discount logic is separated from order processing
 
-### Decorator Pattern in Action
+---
 
-```
-=== ORDER ENHANCEMENTS (Decorator Pattern) ===
-Add optional features to your order:
- 1) ☐ Gift Wrapping (+$5.99)
- 2) ☐ Shipping Insurance (+2% of order)
- 3) ☐ Express Processing (+$9.99)
- 4) ☐ Priority Support (+$3.99)
- 5) Clear all enhancements
- 0) Back
-Toggle enhancement: 1
+## Conclusion
 
-[timestamp] [INFO] Applied: Gift Wrapping
+This laboratory work successfully demonstrates the implementation of three behavioral design patterns in a real-world e-commerce scenario:
 
-=== ORDER ENHANCEMENTS (Decorator Pattern) ===
- 1) ✅ Gift Wrapping (+$5.99)
- 2) ☐ Shipping Insurance (+2% of order)
-...
-```
+1. **Chain of Responsibility** enables flexible, extensible order validation with clear separation of concerns.
 
-### Adapter Pattern in Action
+2. **Observer** provides a robust event notification system that keeps multiple subsystems synchronized without tight coupling.
 
-```
-=== INVENTORY CHECK (via Adapter Pattern) ===
-[timestamp] [INFO] Checking inventory through adapted legacy system...
+3. **Strategy** allows dynamic discount calculation with easily interchangeable algorithms.
 
-=== LEGACY INVENTORY REPORT ===
-SKU-1: 50 units
-SKU-2: 30 units
-SKU-3: 100 units
-SKU-4: 45 units
-SKU-5: 25 units
-================================
+These patterns complement the creational (Singleton, Builder, Factory Method, Abstract Factory) and structural (Decorator, Adapter, Facade) patterns from previous labs, creating a comprehensive, maintainable, and extensible e-commerce system.
 
-Checking availability for current cart:
-✅ All cart items are in stock!
-```
-
-### Facade Pattern in Action
-
-```
-🏛️  Using FACADE PATTERN to process checkout...
-
-[timestamp] [INFO] === STARTING CHECKOUT FACADE ===
-[timestamp] [INFO] Step 1/7: Validating inventory...
-[timestamp] [INFO] Validating stock for order ORD-20250108-143027
-[timestamp] [INFO] Stock validation passed
-[timestamp] [INFO] Step 2/7: Reserving stock...
-[LEGACY SYSTEM] Decremented SKU-1 by 2
-[timestamp] [INFO] Reserved 2 units of SKU-1
-[timestamp] [INFO] Step 3/7: Processing payment...
-[timestamp] [INFO] Using processor: PayPal
-[timestamp] [INFO] Processing PayPal payment of $61.78
-[timestamp] [INFO] Step 4/7: Preparing shipping...
-[timestamp] [INFO] Step 5/7: Creating tracking...
-[timestamp] [INFO] 📦 Tracking created for order ORD-20250108-143027
-[timestamp] [INFO] 📦 Order ORD-20250108-143027 status: PAYMENT_CONFIRMED
-[timestamp] [INFO] Step 6/7: Sending notifications...
-[timestamp] [INFO] 📧 Sending order confirmation email to John Doe
-[timestamp] [INFO] 📧 Sending payment receipt to John Doe
-[timestamp] [INFO] 📧 Sending shipping notification to John Doe
-[timestamp] [INFO] Step 7/7: Finalizing order...
-[timestamp] [INFO] 📦 Order ORD-20250108-143027 status: READY_TO_SHIP
-[timestamp] [INFO] === CHECKOUT COMPLETE ===
-
-============================================================
-CHECKOUT RESULT - Order #ORD-20250108-143027
-============================================================
-Status: ✅ SUCCESS
-Message: Order processed successfully with: Standard Order + Gift Wrapping ($5.99) + Express Processing ($9.99)
-Amount Paid: $61.78
-
-Shipping Details:
-  Label: DHL Label → 123 Main Street, City, State
-  Box: DHL Standard Box 40x30x20cm
-============================================================
-```
-
-### Complete Order Flow Example
-
-```
-1. Add items to cart
-   - Added: Mechanical Keyboard x1 ($89.50)
-
-2. Set customer: John Doe
-
-3. Set shipping address: 123 Main Street
-
-4. Manage enhancements (DECORATOR):
-   - ✅ Gift Wrapping (+$5.99)
-   - ✅ Express Processing (+$9.99)
-
-5. Check inventory (ADAPTER):
-   - All items available
-
-6. Review draft order:
-   Subtotal: $89.50
-   Base Total: $89.50
-   
-   --- Order Enhancements ---
-   🎁 Gift Wrapping: +$5.99
-   ⚡ Express Processing: +$9.99
-   
-   FINAL TOTAL: $105.48
-
-7. Checkout (FACADE):
-   - Validates inventory (via ADAPTER)
-   - Reserves stock (via ADAPTER)
-   - Processes payment (via FACTORY METHOD)
-   - Creates shipping (via ABSTRACT FACTORY)
-   - Sends notifications
-   - Updates tracking
-   
-   ✅ Order successful!
-```
+### Key Takeaways:
+- Behavioral patterns focus on object interaction and responsibility distribution
+- They make systems more flexible and easier to maintain
+- Combining multiple patterns creates powerful, reusable architectures
+- Real-world applications often benefit from using multiple patterns together
 
 ---
 
 
-### Final Thoughts
+### Testing the Behavioral Patterns:
 
-This laboratory work demonstrates that design patterns are powerful tools for creating maintainable, extensible, and flexible software. The structural patterns successfully addressed real problems:
-- Decorator eliminated class explosion
-- Adapter enabled legacy integration
-- Facade simplified complex workflows
+1. **Test Chain of Responsibility**:
+    - Try to checkout with empty cart (fails basic validation)
+![Alt text](chain2.png)
+    - Try to order more items than available (fails inventory validation)
+![Alt text](chain3.png)
+    - Try to create order under $5 (fails value validation)
+![Alt text](chain1.png)
+![Alt text](ds1.png)
+2. **Test Observer**:
+    - Complete a full checkout and observe notifications
 
-Most importantly, the patterns work together harmoniously, creating a cohesive system that is greater than the sum of its parts.
-
----
-
-## References
-
-1. Gamma, E., Helm, R., Johnson, R., & Vlissides, J. (1994). *Design Patterns: Elements of Reusable Object-Oriented Software*. Addison-Wesley.
-
-2. Freeman, E., & Freeman, E. (2004). *Head First Design Patterns*. O'Reilly Media.
-
-3. Martin, R. C. (2017). *Clean Architecture: A Craftsman's Guide to Software Structure and Design*. Prentice Hall.
-
-4. Bloch, J. (2018). *Effective Java* (3rd ed.). Addison-Wesley Professional.
-
-5. Refactoring.Guru. *Design Patterns*. https://refactoring.guru/design-patterns
+3. **Test Strategy**:
+    - Go to menu option 12 (Manage discount strategy)
+    - Select different strategies
+    - Use option 3 to preview discount calculations
 
 ---
+
+**End of Documentation**
